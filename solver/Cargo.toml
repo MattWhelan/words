@@ -8,4 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.52"
 regex = "1.5.4"
+strsim = "0.10.0"
+
 wordlib = { path = "../wordlib" }

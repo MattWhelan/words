@@ -3,7 +3,7 @@ use std::env::args;
 use std::fs::File;
 use std::io::Read;
 use std::process;
-use wordlib::{best_guesses, char_freq, show_freq};
+use wordlib::{char_freq, coverage_guesses, show_freq};
 
 const TARGET_WORD_LEN: usize = 5;
 
@@ -15,9 +15,7 @@ fn main() -> Result<(), anyhow::Error> {
     } else {
         // Parse args
         let input_filename = arguments[1].as_str();
-        let disallowed: HashSet<String> = arguments[2..].iter()
-            .cloned()
-            .collect();
+        let disallowed: HashSet<String> = arguments[2..].iter().cloned().collect();
 
         // Read the word list
         let mut file = File::open(input_filename)?;
@@ -26,7 +24,8 @@ fn main() -> Result<(), anyhow::Error> {
         let all_words: Vec<&str> = contents.lines().collect();
 
         // Filter out proper names, words of the wrong length, and disallowed words
-        let target_words: Vec<&str> = all_words.iter()
+        let target_words: Vec<&str> = all_words
+            .iter()
             .filter(|s| s.chars().all(|ch| ch.is_lowercase()))
             .filter(|s| s.len() == TARGET_WORD_LEN)
             .filter(|s| !disallowed.contains(**s))
@@ -39,8 +38,8 @@ fn main() -> Result<(), anyhow::Error> {
         show_freq(&freq);
 
         // Find the words which give you the best character coverage
-        let mut coverage= HashSet::new();
-        let guesses = best_guesses(&target_words, &freq, &mut coverage);
+        let mut coverage = HashSet::new();
+        let guesses = coverage_guesses(&target_words, &freq, &mut coverage);
         for guess in guesses {
             println!("{}", guess);
         }
