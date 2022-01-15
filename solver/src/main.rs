@@ -1,12 +1,10 @@
 use std::collections::HashSet;
 use std::env::args;
-use std::fs::File;
-use std::io::Read;
 use std::process;
 
-use regex::Regex;
 use strsim::hamming;
-use wordlib::{char_freq, freq_scored_guesses};
+
+use wordlib::{char_freq, freq_scored_guesses, Knowledge, words_from_file};
 
 const TARGET_WORD_LEN: usize = 5;
 
@@ -23,38 +21,33 @@ fn main() -> Result<(), anyhow::Error> {
         let input_filename = arguments[1].as_str();
 
         let pattern = arguments[2].as_str();
-        let re = Regex::new(pattern)?;
 
-        let hit_chars: Vec<char> = arguments[3].chars().collect();
+        let present_chs: &str = arguments[3].as_str();
 
-        let tried: Vec<String> = arguments[4..].iter().cloned().collect();
-        let miss_chars: HashSet<char> = tried
-            .iter()
-            .flat_map(|w| w.chars())
-            .filter(|ch| !hit_chars.contains(ch))
+        let tries: Vec<&str> = arguments[4..].iter()
+            .map(|s| s.as_str())
             .collect();
 
+        let knowledge = Knowledge::from_tries(pattern, present_chs, &tries);
+
         // Read the word list
-        let mut file = File::open(input_filename)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-        let all_words: Vec<&str> = contents.lines().collect();
+        let all_words: Vec<String> = words_from_file(input_filename)?;
+        let disallowed: HashSet<String> = words_from_file("disallowed").unwrap_or(HashSet::new());
 
         // Filter out proper names, words of the wrong length, and disallowed words
         let target_words: Vec<&str> = all_words
             .iter()
             .filter(|s| s.chars().all(|ch| ch.is_lowercase()))
             .filter(|s| s.len() == TARGET_WORD_LEN)
-            .copied()
+            .filter(|s| !disallowed.contains(s.as_str()))
+            .map(|s| s.as_str())
             .collect();
 
         let candidates = candidate_words(&target_words, |w| {
-            re.is_match(w)
-                && hit_chars.iter().all(|ch| w.chars().any(|wch| wch == *ch))
-                && !w.chars().any(|ch| miss_chars.contains(&ch))
+            knowledge.check_word(w)
         });
 
-        if candidates.len() < 10 {
+        if candidates.len() < 100 {
             println!("Candidates ({}):", candidates.len());
             for w in candidates.iter() {
                 println!("  {}", w);
@@ -70,15 +63,15 @@ fn main() -> Result<(), anyhow::Error> {
 
         // Find the words which give you the best character coverage
         let mut coverage = HashSet::new();
-        coverage.extend(miss_chars.iter());
-        coverage.extend(hit_chars.iter());
+        coverage.extend(knowledge.get_absent().iter());
+        coverage.extend(present_chs.chars());
 
         let word_scores = freq_scored_guesses(&target_words, &freq, &coverage);
 
         let top_score = word_scores[0].1;
         let mut guesses: Vec<&str> = word_scores
             .iter()
-            .filter(|(_, s)| *s == top_score)
+            .take_while(|(_, s)| *s == top_score)
             .map(|(w, _)| *w)
             .collect();
         guesses.sort_by_key(|w| {
