@@ -4,7 +4,13 @@ use std::io::{BufRead, BufReader};
 use std::time;
 
 use ndarray::Array;
-use strsim::levenshtein;
+use strsim::generic_levenshtein;
+
+fn word_levenshtein(s1: &str, s2: &str) -> usize {
+    let w1: Vec<_> = s1.split_whitespace().collect();
+    let w2: Vec<_> = s2.split_whitespace().collect();
+    generic_levenshtein(&w1, &w2)
+}
 
 fn main() -> Result<(), anyhow::Error> {
     let file = File::open("/var/log/wifi.log")?;
@@ -13,11 +19,11 @@ fn main() -> Result<(), anyhow::Error> {
         .filter_map(|res| res.ok())
         .collect();
 
-    let input = &lines[0..100];
+    let input = &lines[0..1000];
 
     let start = time::Instant::now();
     let mut medoids = kmedoids::first_k(11);
-    let dissim = Array::from_shape_fn((input.len(), input.len()), |(i, j)| levenshtein(&input[i], &input[j]) as u32);
+    let dissim = Array::from_shape_fn((input.len(), input.len()), |(i, j)| word_levenshtein(&input[i], &input[j]) as u32);
 
     let distances_done = time::Instant::now();
     println!("built dissimilarity matrix for {} elements", input.len());
