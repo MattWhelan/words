@@ -4,4 +4,5 @@ members = [
     "static",
     "solver",
     "wordlib",
+    "cluster",
 ]
