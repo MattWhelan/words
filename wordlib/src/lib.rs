@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -85,32 +85,25 @@ pub fn words_from_file<T: FromIterator<String>>(filename: &str) -> io::Result<T>
         .collect())
 }
 
-struct PosInfo {
-    hit: HashSet<usize>,
-    miss: HashSet<usize>,
-}
-
-impl Default for PosInfo {
-    fn default() -> Self {
-        PosInfo {
-            hit: HashSet::new(),
-            miss: HashSet::new(),
-        }
-    }
-}
-
+#[derive(Clone, Hash, Debug)]
 pub struct Knowledge {
-    length: usize,
-    matches: HashMap<char, PosInfo>,
-    absent: HashSet<char>,
+    /// Represents the length and known character positions
+    pattern: Vec<Option<char>>,
+    /// All characters known to be present
+    present: BTreeSet<char>,
+    /// Characters known absent from the word
+    absent: BTreeSet<char>,
+    /// Characters present but not hits
+    misses: Vec<BTreeSet<char>>,
 }
 
 impl Knowledge {
     pub fn new(length: usize) -> Knowledge {
         Knowledge {
-            length,
-            matches: HashMap::new(),
-            absent: HashSet::new(),
+            pattern: vec![None; length],
+            present: BTreeSet::new(),
+            absent: BTreeSet::new(),
+            misses: vec![BTreeSet::new(); length]
         }
     }
 
@@ -128,9 +121,13 @@ impl Knowledge {
         for &w in tries {
             for (i, ch) in w.chars().enumerate() {
                 if present.contains(&ch) {
-                    let pos = ret.matches.entry(ch).or_default();
-                    if !pos.hit.contains(&i) {
-                        ret.add_miss(ch, i);
+                    match &ret.pattern[i] {
+                        None => ret.add_miss(ch, i),
+                        Some(hit) => {
+                            if *hit != ch {
+                                ret.add_miss(ch, i);
+                            }
+                        }
                     }
                 } else {
                     ret.absent.insert(ch);
@@ -141,37 +138,31 @@ impl Knowledge {
         ret
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.pattern.iter().all(|x| x.is_none()) &&
+            self.absent.is_empty() &&
+            self.present.is_empty() &&
+            self.misses.iter().all(|s| s.is_empty())
+    }
+
     pub fn fits(&self, ch: &char, at: usize) -> bool {
-        if let Some(pos) = self.matches.get(ch) {
-            if pos.hit.contains(&at) {
-                true
-            } else {
-                if pos.miss.contains(&at) {
-                    false
-                } else {
-                    // No known positional match covers this position
-                    !self.matches.iter()
-                        .any(|(_, pos)| pos.hit.contains(&at))
-                }
-            }
+        if let Some(known) = self.pattern[at] {
+            return known == *ch
+        } else if self.present.contains(&ch){
+            !self.misses[at].contains(&ch)
         } else {
-            if self.absent.contains(ch) {
-                false
-            } else {
-                // No known positional match covers this position
-                !self.matches.iter()
-                    .any(|(_, pos)| pos.hit.contains(&at))
-            }
+            !self.absent.contains(&ch)
         }
     }
 
     pub fn check_word(&self, w: &str) -> bool {
-        if w.len() == self.length {
+        if w.len() == self.pattern.len() {
             if w.chars()
                 .enumerate()
                 .all(|(i, ch)| self.fits(&ch, i)) {
-                let word_chars: HashSet<char> = w.chars().collect();
-                self.matches.keys().all(|ch| word_chars.contains(ch))
+                //Each character fits (is plausible), but does w cover all the things we know?
+                let word_chars: BTreeSet<char> = w.chars().collect();
+                word_chars.is_superset(&self.present)
             } else {
                 false
             }
@@ -180,36 +171,40 @@ impl Knowledge {
         }
     }
 
-    pub fn add_hit(&mut self, ch: char, at: usize) {
-        let pos = self.matches.entry(ch).or_default();
-        pos.hit.insert(at);
+    pub fn filter<'a>(&self, words: &[&'a str]) -> Vec<&'a str> {
+        words.iter().filter(|w| self.check_word(w)).copied().collect()
     }
 
-    pub fn add_miss(&mut self, ch: char, at: usize) {
-        let pos = self.matches.entry(ch).or_default();
-        pos.miss.insert(at);
-        if pos.miss.len() == self.length - 1 {
-            let hit = (0..self.length).filter(|i| !pos.miss.contains(i)).next().unwrap();
-            pos.hit.insert(hit);
-        }
+    fn add_hit(&mut self, ch: char, at: usize) {
+        self.pattern[at] = Some(ch);
+        self.present.insert(ch);
     }
 
-    pub fn add_absent(&mut self, ch: char) {
+    fn add_miss(&mut self, ch: char, at: usize) {
+        self.misses[at].insert(ch);
+        self.present.insert(ch);
+    }
+
+    fn add_absent(&mut self, ch: char) {
         self.absent.insert(ch);
     }
 
-    pub fn get_absent(&self) -> &HashSet<char> {
-        &self.absent
+    pub fn get_covered(&self) -> HashSet<char> {
+        self.present.iter().chain(self.absent.iter()).copied().collect()
     }
 
-    pub fn get_covered(&self) -> HashSet<char> {
-        if self.length == self.matches.len() {
-            ('a'..='z').collect()
-        } else {
-            self.matches.keys()
-                .chain(self.absent.iter())
-                .copied()
-                .collect()
-        }
+    pub fn learn(&mut self, guess: &str, answer: &str) {
+        let answer_set: HashSet<char> = answer.chars().collect();
+        guess.chars().zip(answer.chars())
+            .enumerate()
+            .for_each(|(i, (ch, answer_char))| {
+                if ch == answer_char {
+                    self.add_hit(ch, i);
+                } else if answer_set.contains(&ch) {
+                    self.add_miss(ch, i);
+                } else {
+                    self.add_absent(ch);
+                }
+            });
     }
 }

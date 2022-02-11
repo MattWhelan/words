@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use clap::Parser;
-use strsim::hamming;
+use solver::{EntropyStrategy, GuessStrategy};
 
-use wordlib::{char_freq, freq_scored_guesses, Knowledge, words_from_file};
+use wordlib::{Knowledge, words_from_file};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -44,63 +44,13 @@ fn main() -> Result<(), anyhow::Error> {
         .unwrap_or(HashSet::new());
 
     // Filter out proper names, words of the wrong length, and disallowed words
-    let target_words: Vec<&str> = all_words
-        .iter()
-        .filter(|s| s.chars().all(|ch| ch.is_lowercase()))
-        .filter(|s| s.len() == target_word_len)
-        .filter(|s| !disallowed.contains(s.as_str()))
-        .map(|s| s.as_str())
-        .collect();
+    let target_words: Vec<&str> = solver::valid_words(target_word_len, &all_words, disallowed);
 
-    let candidates = candidate_words(&target_words, |w| {
-        knowledge.check_word(w)
-    });
+    let guesser = EntropyStrategy::new(&target_words);
+    let guess = guesser.next_guess(&knowledge);
 
-    if candidates.len() < 100 {
-        println!("Candidates ({}):", candidates.len());
-        for w in candidates.iter() {
-            println!("  {}", w);
-        }
-        if candidates.len() < 3 {
-            return Ok(());
-        }
-    } else {
-        println!("Candidates: {}", candidates.len());
-    }
-
-    let freq = char_freq(&candidates);
-
-    // Find the words which give you the best character coverage
-    let mut coverage = HashSet::new();
-    coverage.extend(knowledge.get_absent().iter());
-    coverage.extend(args.chars.chars());
-
-    let word_scores = freq_scored_guesses(&target_words, &freq, &coverage);
-
-    let top_score = word_scores[0].1;
-    let mut guesses: Vec<&str> = word_scores
-        .iter()
-        .take_while(|(_, s)| *s == top_score)
-        .map(|(w, _)| *w)
-        .collect();
-
-    //Sort guesses by shortest hamming distance to the candidate set; hopefully this reveals positional info.
-    guesses.sort_by_cached_key(|w| {
-        candidates
-            .iter()
-            .map(|c| hamming(w, c).unwrap())
-            .min()
-            .unwrap()
-    });
-
-    println!("Guesses:");
-    for guess in guesses.iter().take(5) {
-        println!("  {}", guess);
-    }
+    println!("Next guess: {}", guess);
 
     Ok(())
 }
 
-fn candidate_words<'a, F: Fn(&str) -> bool>(words: &[&'a str], pred: F) -> Vec<&'a str> {
-    words.iter().filter(|w| pred(w)).copied().collect()
-}
