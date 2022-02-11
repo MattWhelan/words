@@ -121,8 +121,13 @@ impl Knowledge {
         for &w in tries {
             for (i, ch) in w.chars().enumerate() {
                 if present.contains(&ch) {
-                    if ret.pattern[i].is_none() {
-                        ret.add_miss(ch, i);
+                    match &ret.pattern[i] {
+                        None => ret.add_miss(ch, i),
+                        Some(hit) => {
+                            if *hit != ch {
+                                ret.add_miss(ch, i);
+                            }
+                        }
                     }
                 } else {
                     ret.absent.insert(ch);

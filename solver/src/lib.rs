@@ -146,7 +146,7 @@ impl<'a> GuessStrategy for EntropyStrategy<'a> {
     fn next_guess(&self, knowledge: &Knowledge) -> &'a str {
         let candidates = knowledge.filter(&self.words);
 
-        println!("Candidates: {}", candidates.len());
+        println!("Candidates: {}; H = {}", candidates.len(), (candidates.len() as f32).log2());
 
         if candidates.len() < 3 {
             return &candidates[0];
@@ -156,7 +156,7 @@ impl<'a> GuessStrategy for EntropyStrategy<'a> {
             // This case takes forever, is common, and raise is the computed value
             let ret = "raise";
             let word_entropy = Self::entropy_of_guess(&candidates, ret);
-            println!("{}: H = {}", ret, word_entropy);
+            println!("{}: ∆H = {}", ret, word_entropy);
 
             return "raise"
         }
@@ -177,4 +177,20 @@ impl<'a> GuessStrategy for EntropyStrategy<'a> {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use std::collections::HashSet;
+    use wordlib::{Knowledge, words_from_file};
+    use crate::{EntropyStrategy, GuessStrategy, valid_words};
+
+    #[test]
+    fn test() {
+        let all_words: Vec<String> = words_from_file("/usr/share/dict/words").unwrap();
+        let target_words: Vec<&str> = valid_words(5, &all_words, HashSet::new());
+
+        let guesser = EntropyStrategy::new(&target_words);
+        let knowledge = Knowledge::from_tries(".a.se",  "aseup", &["raise", "croup"]);
+
+        let guess = guesser.next_guess(&knowledge);
+        assert_eq!("pause", guess);
+    }
+}

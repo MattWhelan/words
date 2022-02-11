@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::time;
 
-use solver::{EntropyStrategy, FreqStrategy, GuessStrategy, valid_words};
+use solver::{EntropyStrategy, GuessStrategy, valid_words};
 use wordlib::{Knowledge, words_from_file};
 
 use rand::seq::SliceRandom;
